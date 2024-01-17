@@ -144,7 +144,7 @@ class Connection extends BaseConnection {
      * @return bool
      */
     public function statement($query, $bindings = [], $isSelect = false) {
-        if ($this->allowFiltering) {
+        if ($this->allowFiltering && $isSelect) {
             $query .= ' ALLOW FILTERING';
         }
 

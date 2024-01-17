@@ -135,9 +135,7 @@ class Grammar extends BaseGrammar {
             $upateCollections = $columns ? ', ' . $upateCollections : $upateCollections;
         }
 
-        $helper = app()->make(CassandraHelper::class);
-
-        return trim($helper->transformCql("update {$table} set $columns $upateCollections $wheres"));
+        return "update {$table} set $columns $upateCollections $wheres";
     }
 
     /**

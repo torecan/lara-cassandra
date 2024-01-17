@@ -9,6 +9,7 @@ use Illuminate\Database\Query\Builder as BaseBuilder;
 use Illuminate\Database\Query\Expression;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
+use LaraCassandra\CassandraHelper;
 use LaraCassandra\Connection;
 use Cassandra;
 
@@ -131,6 +132,8 @@ class Builder extends BaseBuilder {
      */
     public $collectionTypes = ['set', 'list', 'map'];
 
+    protected $cassandraHelper;
+
     /**
      * The database collection.
      *
@@ -167,7 +170,7 @@ class Builder extends BaseBuilder {
         $this->grammar = new Grammar;
         $this->connection = $connection;
         $this->connection->getCassandraConnection()->setConsistency($this->connection->getConsistency());
-
+        $this->cassandraHelper = new CassandraHelper();
 //         $this->processor = $processor;
 //        $this->useCollections = $this->shouldUseCollections();
     }
@@ -221,7 +224,7 @@ class Builder extends BaseBuilder {
      * @return Cassandra\Rows
      */
     public function executeCql($cql) {
-        return $this->connection->getCassandraConnection()->querySync($cql);
+        return $this->connection->getCassandraConnection()->querySync($this->cassandraHelper->transformCql($cql));
     }
 
     /**
