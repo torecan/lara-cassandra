@@ -38,6 +38,7 @@ class Builder extends BaseBuilder {
 
     public $insertCollections;
     public $connection;
+    public $delParams;
 
     /**
      * The column projections.
