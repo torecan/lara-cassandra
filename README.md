@@ -272,3 +272,6 @@ To delete a model, simply call the delete method on the instance. We can delete 
 We can also perform delete by the column in a table using deleteColumn method:
 
     $emp = DB::table('emp')->where('emp_id', 3)->deleteColumn();
+
+
+### This project is forked from https://github.com/cubettech/lacassa
