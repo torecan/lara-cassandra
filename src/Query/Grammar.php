@@ -1,10 +1,10 @@
 <?php
 
-namespace Torecan\LaraCasandra\Query;
+namespace LaraCasandra\Query;
 
 use Illuminate\Database\Query\Grammars\Grammar as BaseGrammar;
 use Illuminate\Database\Query\Builder as BaseBuilder;
-use Torecan\LaraCasandra\CassandraHelper;
+use LaraCasandra\CassandraHelper;
 
 class Grammar extends BaseGrammar {
     /**

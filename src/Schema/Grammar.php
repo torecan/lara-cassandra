@@ -1,10 +1,10 @@
 <?php
 
-namespace Torecan\LaraCasandra\Schema;
+namespace LaraCasandra\Schema;
 
 use Illuminate\Database\Schema\Grammars\Grammar as BaseGrammar;
-use Torecan\LaraCasandra\Schema\Blueprint as Blueprint;
-use Torecan\LaraCasandra\Connection;
+use LaraCasandra\Schema\Blueprint as Blueprint;
+use LaraCasandra\Connection;
 use Illuminate\Support\Fluent;
 use Illuminate\Database\Schema\Blueprint as BaseBlueprint;
 

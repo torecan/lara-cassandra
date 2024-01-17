@@ -1,6 +1,6 @@
 <?php
 
-namespace Torecan\LaraCasandra\Query;
+namespace LaraCasandra\Query;
 
 use Illuminate\Database\Query\Processors\Processor as BaseProcessor;
 use Illuminate\Database\Query\Builder;

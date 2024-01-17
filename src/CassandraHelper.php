@@ -1,6 +1,6 @@
 <?php
 
-namespace Torecan\LaraCasandra;
+namespace LaraCasandra;
 
 use Cassandra\Exception as Exception;
 

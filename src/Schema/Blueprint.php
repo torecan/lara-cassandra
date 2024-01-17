@@ -1,6 +1,6 @@
 <?php
 
-namespace Torecan\LaraCasandra\Schema;
+namespace LaraCasandra\Schema;
 
 use Illuminate\Database\Connection;
 use Illuminate\Database\Schema\Grammars\Grammar as BaseGrammar;

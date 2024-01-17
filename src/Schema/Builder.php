@@ -1,9 +1,9 @@
 <?php
 
-namespace Torecan\LaraCasandra\Schema;
+namespace LaraCasandra\Schema;
 
 use Closure;
-use Torecan\LaraCasandra\Connection;
+use LaraCasandra\Connection;
 
 class Builder extends \Illuminate\Database\Schema\Builder
 {

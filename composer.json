@@ -1,8 +1,9 @@
 {
-    "name": "torecan/laraCassandra",
+    "name": "torecan/lara-cassandra",
     "type": "library",
     "description": "Cassandra based query builder for laravel.",
     "license": "MIT",
+    "homepage": "https://github.com/torecan/laracassandra",
     "keywords": [
         "cassandra",
         "nosql",
@@ -12,6 +13,9 @@
         "cql",
         "lara-cass"
     ],
+    "require": {
+        "mroosz/php-cassandra": "dev-main"
+    },
     "authors": [
         {
             "name": "Torecan Celik",
@@ -28,7 +32,7 @@
     ],
     "autoload": {
         "psr-4": {
-            "Torecan\\LaraCassandra\\": "src/"
+            "LaraCassandra\\": "src/"
         }
     },
     "minimum-stability": "dev",

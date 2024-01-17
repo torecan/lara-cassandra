@@ -1,6 +1,6 @@
 <?php
 
-namespace Torecan\LaraCasandra;
+namespace LaraCasandra;
 
 use Exception;
 use MongoDB\BSON\ObjectID;

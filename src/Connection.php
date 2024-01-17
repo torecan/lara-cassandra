@@ -1,6 +1,6 @@
 <?php
 
-namespace Torecan\LaraCasandra;
+namespace LaraCasandra;
 
 use Illuminate\Database\Connection as BaseConnection;
 
