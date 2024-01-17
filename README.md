@@ -21,9 +21,9 @@ A Query builder with support for Cassandra, using the original Laravel API. This
 
 Installation using composer:
 
-> composer require torecan/lara-cass
+> composer require torecan/lara-cassandra
 
-Make sure you have mroosz/php-cassandra library into torecan/lara-cass/vendor folder, if not
+Make sure you have mroosz/php-cassandra library into torecan/lara-cassandra/vendor folder, if not
 
 > composer require mroosz/php-cassandra
 
@@ -72,7 +72,7 @@ And add a new cassandra connection:
   
   DB_USERNAME=torecan
   
-  DB_PASSWORD=lara-cassa
+  DB_PASSWORD=***
   
   DB_PAGE_SIZE=500
 
