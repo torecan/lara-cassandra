@@ -1,4 +1,4 @@
-## **Lara-Cass**
+## **LaraCassandra**
 
 
 A Query builder with support for Cassandra, using the original Laravel API. This library extends the original Laravel classes, so it uses exactly the same methods.
@@ -11,7 +11,7 @@ A Query builder with support for Cassandra, using the original Laravel API. This
 
 * Query 	Builder
 
-* Schema
+* Schema (!todo)
 
 * Extensions
 
@@ -19,7 +19,13 @@ A Query builder with support for Cassandra, using the original Laravel API. This
 
 ## **Installation**
 
-Installation using composer:
+Before installation:
+
+This is project is still on development progress, before add this on your project, please be sure minimum-stability variable is "dev" 
+
+> "minimum-stability": "dev",
+
+Install using composer:
 
 > composer require torecan/lara-cassandra
 
