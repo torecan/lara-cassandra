@@ -1,5 +1,5 @@
 {
-    "name": "torecan/laraCassandra",
+    "name": "torecan/lara-cassandra",
     "type": "library",
     "description": "Cassandra based query builder for laravel.",
     "license": "MIT",
