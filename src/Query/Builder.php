@@ -1,6 +1,6 @@
 <?php
 
-namespace LaraCasandra\Query;
+namespace LaraCassandra\Query;
 
 use Closure;
 use DateTime;
@@ -9,7 +9,7 @@ use Illuminate\Database\Query\Builder as BaseBuilder;
 use Illuminate\Database\Query\Expression;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
-use LaraCasandra\Connection;
+use LaraCassandra\Connection;
 use Cassandra;
 
 

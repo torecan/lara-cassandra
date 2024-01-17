@@ -1,6 +1,6 @@
 <?php
 
-namespace LaraCasandra;
+namespace LaraCassandra;
 
 use Exception;
 use MongoDB\BSON\ObjectID;

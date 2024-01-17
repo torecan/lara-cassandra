@@ -1,10 +1,10 @@
 <?php
 
-namespace LaraCasandra\Query;
+namespace LaraCassandra\Query;
 
 use Illuminate\Database\Query\Grammars\Grammar as BaseGrammar;
 use Illuminate\Database\Query\Builder as BaseBuilder;
-use LaraCasandra\CassandraHelper;
+use LaraCassandra\CassandraHelper;
 
 class Grammar extends BaseGrammar {
     /**

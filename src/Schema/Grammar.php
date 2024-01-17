@@ -1,10 +1,10 @@
 <?php
 
-namespace LaraCasandra\Schema;
+namespace LaraCassandra\Schema;
 
 use Illuminate\Database\Schema\Grammars\Grammar as BaseGrammar;
-use LaraCasandra\Schema\Blueprint as Blueprint;
-use LaraCasandra\Connection;
+use LaraCassandra\Schema\Blueprint as Blueprint;
+use LaraCassandra\Connection;
 use Illuminate\Support\Fluent;
 use Illuminate\Database\Schema\Blueprint as BaseBlueprint;
 

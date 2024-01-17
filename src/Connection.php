@@ -1,6 +1,6 @@
 <?php
 
-namespace LaraCasandra;
+namespace LaraCassandra;
 
 use Illuminate\Database\Connection as BaseConnection;
 

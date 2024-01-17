@@ -29,7 +29,7 @@ Make sure you have mroosz/php-cassandra library into torecan/lara-cassandra/vend
 
 And add the service provider in config/app.php:
 
-    LaraCasandra\CassandraServiceProvider::class,
+    LaraCassandra\CassandraServiceProvider::class,
 
 ## **Configuration**
 
