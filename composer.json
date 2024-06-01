@@ -35,6 +35,25 @@
     "minimum-stability": "dev",
     "prefer-stable": true,
     "require": {
+        "php": ">=8.2",
+        "laravel/framework": "^11.9.2",
         "mroosz/php-cassandra": "dev-main"
+    },
+    "require-dev": {
+        "friendsofphp/php-cs-fixer": "^3.58.1",
+        "phpstan/phpstan": "^1.10.67"
+    },
+    "scripts": {
+        "lint": "vendor/bin/php-cs-fixer check",
+        "lint-fix": "vendor/bin/php-cs-fixer fix",
+        "phpstan": "vendor/bin/phpstan analyse --memory-limit=1G"
+    },
+
+    "extra": {
+        "laravel": {
+            "providers": [
+                "LaraCassandra\\CassandraServiceProvider"
+            ]
+        }
     }
 }

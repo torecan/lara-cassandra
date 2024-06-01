@@ -1,0 +1,10 @@
+parameters:
+    level: max
+    paths:
+        - src
+    treatPhpDocTypesAsCertain: false
+    #exceptions:
+    #    implicitThrows: false
+    #    check:
+    #        missingCheckedExceptionInThrows: true
+    #        tooWideThrowType: true

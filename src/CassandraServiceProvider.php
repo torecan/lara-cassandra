@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace LaraCassandra;
 
 use Illuminate\Support\ServiceProvider;
@@ -11,7 +13,6 @@ class CassandraServiceProvider extends ServiceProvider {
      * @return void
      */
     public function boot() {
-//        require __DIR__ . '/../vendor/autoload.php';
     }
 
     /**
@@ -20,7 +21,6 @@ class CassandraServiceProvider extends ServiceProvider {
      * @return void
      */
     public function register() {
-        // Add database driver.
         $this->app->resolving('db', function ($db) {
             $db->extend('cassandra', function ($config, $name) {
                 $config['name'] = $name;

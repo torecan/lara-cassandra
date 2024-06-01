@@ -1,256 +1,554 @@
 <?php
 
+declare(strict_types=1);
+
 namespace LaraCassandra;
+
+use Closure;
 
 use Illuminate\Database\Connection as BaseConnection;
 
-use Cassandra;
+use Cassandra\Connection as CassandraConnection;
+use Cassandra\Exception as CassandraException;
+use Cassandra\Response\Result as CassandraResult;
+
+use LaraCassandra\Events\StatementPrepared;
 
 class Connection extends BaseConnection {
-    public const DEFAULT_TIMEOUT = 30;
     public const DEFAULT_CONNECT_TIMEOUT = 5.0;
-    public const DEFAULT_REQUEST_TIMEOUT = 12.0;
-    public const DEFAULT_ALLOW_FILTERING = false;
+    public const DEFAULT_CONSISTENCY = Consistency::LOCAL_ONE;
     public const DEFAULT_PAGE_SIZE = 500;
-    public const DEFAULT_CONSISTENCY = Cassandra\Request\Request::CONSISTENCY_LOCAL_ONE;
+    public const DEFAULT_REQUEST_TIMEOUT = 12.0;
+    public const DEFAULT_TIMEOUT = 30;
 
     /**
-     * The Cassandra connection handler.
-     *
-     * @var CassandraConnection
+     * The active CDO connection.
      */
-    protected $connection;
-    protected $config;
-    protected $db;
-    protected $allowFiltering;
+    protected CassandraConnection|Closure|null $cdo;
+
+    protected Consistency $consistency = self::DEFAULT_CONSISTENCY;
+
+    /**
+     * The active CDO connection used for reads.
+     */
+    protected CassandraConnection|Closure|null $readCdo;
 
     /**
      * Create a new database connection instance.
      *
-     * @param array $config
+     * @param array<string,mixed> $config
+     *
+     * @return void
      */
     public function __construct(array $config) {
+
+        /** 
+         * @var array{
+         *   name: string,
+         *   host: string,
+         *   port: string|int,
+         *   username: string,
+         *   password: string,
+         *   keyspace?: string,
+         *   prefix?: string,
+         *   timeout?: int,
+         *   connect_timeout?: float,
+         *   request_timeout?: float,
+         *   page_size?: int
+         * } $config
+         */
+        $this->cdo = $this->createNativeConnection($config);
+        $this->readCdo = null;
+
+        $this->setReconnector(function ($connection) use ($config) {
+
+            $connection->disconnect();
+            $connection->cdo = $this->createNativeConnection($config);
+        });
+
+        $database = $config['keyspace'] ?? '';
+        $tablePrefix = $config['prefix'] ?? '';
+
+        // First we will setup the default properties. We keep track of the DB
+        // name we are connected to since it is needed when some reflective
+        // type commands are run such as checking whether a table exists.
+        $this->database = $database;
+
+        $this->tablePrefix = $tablePrefix;
+
         $this->config = $config;
-        // Create the connection
-        $this->db = $config['keyspace'];
-        $this->connection = $this->createConnection($config);
-        $this->useDefaultPostProcessor();
 
-        $this->useDefaultSchemaGrammar();
+        // We need to initialize a query grammar and the query post processors
+        // which are both very important parts of the database abstractions
+        // so we initialize these to their default values while starting.
         $this->useDefaultQueryGrammar();
+
+        $this->useDefaultPostProcessor();
     }
 
     /**
-     * Dynamically pass methods to the connection.
+     * Run an SQL statement and get the number of rows affected.
      *
-     * @param string $method
-     * @param array $parameters
-     * @return mixed
+     * @param  string  $query
+     * @param  array<mixed>  $bindings
+     * @return int
      */
-    public function __call($method, $parameters) {
-        return call_user_func_array([$this->connection, $method], $parameters);
+    public function affectingStatement($query, $bindings = []) {
+        $result = $this->run($query, $bindings, function ($query, $bindings) {
+            if ($this->pretending()) {
+                return 0;
+            }
+
+            $cdo = $this->getCdo();
+
+            // For update or delete statements, we want to get the number of rows affected
+            // by the statement and return that back to the developer. We'll first need
+            // to execute the statement and then we'll use PDO to fetch the affected.
+            $statement = $cdo->prepare($query);
+
+            $preparedBindings = $this->prepareBindings($bindings);
+
+            $cdo->executeSync(
+                $statement['id'],
+                $preparedBindings,
+                $this->getConsistency()->value
+            );
+
+            // we can't get the affected rows count from Cassandra,
+            // so we assume that one row was affected
+            $count = 1;
+
+            $this->recordsHaveBeenModified(true);
+
+            return $count;
+        });
+
+        if (!is_int($result)) {
+            throw new CassandraException('Result is not integer');
+        }
+
+        return $result;
     }
 
     /**
-     * Begin a fluent query against a database collection.
+     * Run a select statement against the database and returns a generator.
      *
-     * @param string $collection
-     * @return Query\Builder
+     * @param  string  $query
+     * @param  array<mixed>  $bindings
+     * @param  bool  $useReadPdo
+     * @return \Generator
      */
-    public function collection($collection) {
-        $query = new Query\Builder($this->connection);
+    public function cursor($query, $bindings = [], $useReadPdo = true) {
 
-        return $query->from($collection);
+        $useReadCdo = $useReadPdo;
+
+        $resultIterator = $this->run($query, $bindings, function ($query, $bindings) use ($useReadCdo) {
+            if ($this->pretending()) {
+                return [];
+            }
+
+            $cdo = $this->getCdoForSelect($useReadCdo);
+
+            // First we will create a statement for the query. Then, we will set the fetch
+            // mode and prepare the bindings for the query. Once that's done we will be
+            // ready to execute the query against the database and return the cursor.
+            $statement = $cdo->prepare($query);
+            $this->event(new StatementPrepared($this, $statement));
+
+            $preparedBindings = $this->prepareBindings($bindings);
+
+            // Next, we'll execute the query against the database and return the statement
+            // so we can return the cursor. The cursor will use a PHP generator to give
+            // back one row at a time without using a bunch of memory to render them.
+            $result = $cdo->executeSync(
+                $statement['id'],
+                $preparedBindings,
+                $this->getConsistency()->value,
+                [
+                    'page_size' => $this->getPageSize(),
+                ]
+            );
+
+            return $result->getIterator();
+        });
+
+        if (!is_iterable($resultIterator)) {
+            throw new CassandraException('Result is not iterable');
+        }
+
+        foreach ($resultIterator as $record) {
+            yield $record;
+        }
     }
 
     /**
-     * Begin a fluent query against a database collection.
+     * Disconnect from the underlying CDO connection.
      *
-     * @param string $table
-     * @param  ?string $as
-     * @return Query\Builder
+     * @return void
      */
-    public function table($table, $as = null) {
-        return $this->collection($table);
+    public function disconnect() {
+
+        if ($this->cdo instanceof CassandraConnection) {
+            $this->cdo->disconnect();
+        }
+
+        $this->cdo = null;
+
+        if ($this->readCdo instanceof CassandraConnection) {
+            $this->readCdo->disconnect();
+        }
+
+        $this->readCdo = null;
+
+        $this->setCdo(null)->setReadCdo(null);
+    }
+
+    /**
+     * Get the current CDO connection.
+     *
+     * @return \Cassandra\Connection
+     */
+    public function getCdo(): CassandraConnection {
+        if ($this->cdo instanceof Closure) {
+            return $this->cdo = call_user_func($this->cdo);
+        } elseif ($this->cdo === null) {
+            throw new CassandraException('CDO connection is not set');
+        }
+
+        return $this->cdo;
+    }
+
+    public function getConsistency(): Consistency {
+        return $this->consistency;
+    }
+
+    public function getPageSize(): int {
+        return $this->config['page_size'] ?? self::DEFAULT_PAGE_SIZE;
+    }
+
+    /**
+     * Get the current CDO connection parameter without executing any reconnect logic.
+     *
+     * @return \Cassandra\Connection|\Closure|null
+     */
+    public function getRawCdo(): CassandraConnection|Closure|null {
+        return $this->cdo;
+    }
+
+    /**
+     * Get the current read CDO connection parameter without executing any reconnect logic.
+     *
+     * @return \Cassandra\Connection|\Closure|null
+     */
+    public function getRawReadCdo(): CassandraConnection|Closure|null {
+        return $this->readCdo;
+    }
+
+    /**
+     * Get the current CDO connection used for reading.
+     *
+     * @return \Cassandra\Connection
+     */
+    public function getReadCdo(): CassandraConnection {
+        if ($this->transactions > 0) {
+            return $this->getCdo();
+        }
+
+        if ($this->readOnWriteConnection
+            || ($this->recordsModified && $this->getConfig('sticky'))) {
+            return $this->getCdo();
+        }
+
+        if ($this->readCdo instanceof Closure) {
+            return $this->readCdo = call_user_func($this->readCdo);
+        }
+
+        return $this->readCdo ?: $this->getCdo();
     }
 
     /**
      * @inheritdoc
      */
     public function getSchemaBuilder() {
+
+        if (is_null($this->schemaGrammar)) {
+            $this->useDefaultSchemaGrammar();
+        }
+
         return new Schema\Builder($this);
     }
 
     /**
-     * [getSchemaGrammar returns the connection grammer]
-     * @return [Schema\Grammar] [description]
+     * Returns the connection grammer
+     * 
+     * @return Schema\Grammar
      */
     public function getSchemaGrammar() {
         return new Schema\Grammar;
     }
 
     /**
-     * return Cassandra object.
+     * Get the server version for the connection.
      *
-     * @return \Cassandra\DefaultSession
+     * @return string
      */
-    public function getCassandraConnection() {
-        return $this->connection;
-    }
-
-    public function getConsistency() {
-        return $this->config['consistency'] ?? self::DEFAULT_CONSISTENCY;
-    }
-
-
-    /**
-     * @inheritdoc
-     */
-    public function disconnect() {
-        unset($this->connection);
+    public function getServerVersion(): string {
+        return (string) $this->getCdo()->getVersion();
     }
 
     /**
-     * @inheritdoc
-     */
-    public function getElapsedTime($start) {
-        return parent::getElapsedTime($start);
-    }
-
-    /**
-     * @inheritdoc
-     */
-    public function getDriverName() {
-        return 'Cassandra';
-    }
-
-    /**
-     * Call an CQL statement and return the boolean result.
+     * Reconnect to the database if a CDO connection is missing.
      *
-     * @param string $query
-     * @param array $bindings
-     * @param bool $useReadPdo
-     * @return bool
+     * @return void
+     */
+    public function reconnectIfMissingConnection() {
+        if (is_null($this->cdo)) {
+            $this->reconnect();
+        }
+    }
+
+    /**
+     * Run a select statement against the database.
+     *
+     * @param  string  $query
+     * @param  array<mixed>  $bindings
+     * @param  bool  $useReadPdo
+     * @return array<mixed>
      */
     public function select($query, $bindings = [], $useReadPdo = true) {
-        return $this->statement($query, $bindings, true);
-    }
 
-    /**
-     * Execute an CQL statement and return the boolean result.
-     *
-     * @param string $query
-     * @param array $bindings
-     * @return bool
-     */
-    public function statement($query, $bindings = [], $isSelect = false) {
-        if ($this->allowFiltering && $isSelect) {
-            $query .= ' ALLOW FILTERING';
+        $useReadCdo = $useReadPdo;
+
+        $result = $this->run($query, $bindings, function ($query, $bindings) use ($useReadCdo) {
+            if ($this->pretending()) {
+                return [];
+            }
+
+            $cdo = $this->getCdoForSelect($useReadCdo);
+
+            // For select statements, we'll simply execute the query and return an array
+            // of the database result set. Each element in the array will be a single
+            // row from the database table, and will either be an array or objects.
+            $statement = $cdo->prepare($query);
+            $this->event(new StatementPrepared($this, $statement));
+
+            $preparedBindings = $this->prepareBindings($bindings);
+
+            $result = $cdo->executeSync(
+                $statement['id'],
+                $preparedBindings,
+                $this->getConsistency()->value,
+                [
+                    'page_size' => $this->getPageSize(),
+                ]
+            );
+
+            return $result->fetchAll();
+        });
+
+        if (!is_array($result)) {
+            throw new CassandraException('Result is not an array');
         }
-
-        foreach ($bindings as $binding) {
-            $value = 'string' == strtolower(gettype($binding)) ? "'" . $binding . "'" : $binding;
-            $query = preg_replace('/\?/', $value, $query, 1);
-        }
-
-        $builder = new Query\Builder($this, $this->getPostProcessor());
-
-        return $builder->executeCql($query);
-    }
-
-    /**
-     * Run an CQL statement and get the number of rows affected.
-     *
-     * @param string $query
-     * @param array $bindings
-     * @return int
-     */
-    public function affectingStatement($query, $bindings = []) {
-        // For update or delete statements, we want to get the number of rows affected
-        // by the statement and return that back to the developer. We'll first need
-        // to execute the statement and then we'll use PDO to fetch the affected.
-        foreach ($bindings as $binding) {
-            $value = $value = 'string' == strtolower(gettype($binding)) ? "'" . $binding . "'" : $binding;
-            $query = preg_replace('/\?/', $value, $query, 1);
-        }
-        $builder = new Query\Builder($this, $this->getPostProcessor());
-
-        return $builder->executeCql($query);
-    }
-
-    /**
-     * Execute an raw CQL statement and return the boolean result.
-     *
-     * @param string $query
-     * @param array $bindings
-     * @return bool
-     */
-    public function raw($query) {
-        $builder = new Query\Builder($this, $this->getPostProcessor());
-        $result = $builder->executeCql($query);
 
         return $result;
     }
 
     /**
-     * Get nodes configs
-     *
-     * @param array $config
-     * @return array
-     */
-    protected function getNodes(array $config) {
-        $nodes = [];
-        $this->allowFiltering = $config['allow_filtering'] ?? self::DEFAULT_ALLOW_FILTERING;
+      * Run a select statement against the database and returns all of the result sets.
+      *
+      * @param  string  $query
+      * @param  array<mixed>  $bindings
+      * @param  bool  $useReadPdo
+      * @return mixed
+      */
+    public function selectResultSets($query, $bindings = [], $useReadPdo = true) {
 
-        $hosts = explode(',', $config['host']);
-        $config['port'] = $config['port'] ?? [];
-
-        if (count($hosts) < 1) {
-            throw new Cassandra\Exception('DB hostname is not found, please check your DB hostname');
-        }
-
-        if ($config['port']) {
-            $ports = explode(',', $config['port']);
-        }
-
-
-        foreach ($hosts as $index => $host) {
-            $node = [
-                'host' => $host,
-                'port' => (int) $ports[$index],
-                'username' => $config['username'],
-                'password' => $config['password'],
-                'timeout' => $config['timeout'] ?? self::DEFAULT_TIMEOUT,
-                'connect_timeout' => $config['connect_timeout'] ?? self::DEFAULT_CONNECT_TIMEOUT,
-                'request_timeout' => $config['request_timeout'] ?? self::DEFAULT_REQUEST_TIMEOUT,
-                'page_size' => $config['page_size'] ?? self::DEFAULT_PAGE_SIZE,
-            ];
-
-
-            $nodes[] = $node;
-        }
-
-        return $nodes;
+        return $this->select($query, $bindings, $useReadPdo);
     }
 
+    /**
+     * Set the CDO connection.
+     *
+     * @param  \Cassandra\Connection|\Closure|null  $cdo
+     * @return $this
+     */
+    public function setCdo(CassandraConnection|Closure|null $cdo): self {
+        $this->transactions = 0;
+
+        $this->cdo = $cdo;
+
+        return $this;
+    }
+
+    public function setConsistency(Consistency $consistency): self {
+        $this->consistency = $consistency;
+
+        return $this;
+    }
+
+    public function setDefaultConsistency(): void {
+        $this->consistency = $this->config['consistency'] ?? self::DEFAULT_CONSISTENCY;
+    }
 
     /**
-     * Create a new Cassandra connection.
+     * Set the CDO connection used for reading.
      *
-     * @param array $config
-     * @return CassandraConnection
+     * @param  \Cassandra\Connection|\Closure|null  $cdo
+     * @return $this
      */
-    protected function createConnection(array $config) {
-        $nodes = $this->getNodes($config);
-        $connection = new Cassandra\Connection($nodes, $config['keyspace']);
+    public function setReadCdo(CassandraConnection|Closure|null $cdo): self {
+        $this->readCdo = $cdo;
 
-        try {
-            $connection->connect();
-        } catch (Cassandra\Exception $e) {
-            echo 'Caught exception: ', $e->getMessage(), "\n";
+        return $this;
+    }
+
+    /**
+     * Execute an SQL statement and return the boolean result.
+     *
+     * @param  string  $query
+     * @param  array<mixed>  $bindings
+     * @return bool
+     */
+    public function statement($query, $bindings = []) {
+        $result = $this->run($query, $bindings, function ($query, $bindings) {
+            if ($this->pretending()) {
+                return true;
+            }
+
+            $cdo = $this->getCdo();
+
+            $statement = $cdo->prepare($query);
+
+            $preparedBindings = $this->prepareBindings($bindings);
+
+            $this->recordsHaveBeenModified();
+
+            $cdo->executeSync(
+                $statement['id'],
+                $preparedBindings,
+                $this->getConsistency()->value
+            );
+
+            return true;
+        });
+
+        if (!is_bool($result)) {
+            throw new CassandraException('Result is not boolean');
         }
 
-        return $connection;
+        return $result;
+    }
+
+    /**
+     * Run a raw, unprepared query against the PDO connection.
+     *
+     * @param  string  $query
+     * @return bool
+     */
+    public function unprepared($query) {
+        $result = $this->run($query, [], function ($query) {
+            if ($this->pretending()) {
+                return true;
+            }
+
+            $cdo = $this->getCdo();
+
+            $result = $cdo->querySync(
+                $query,
+                [],
+                $this->getConsistency()->value,
+                [
+                    'page_size' => $this->getPageSize(),
+                ]
+            );
+
+            if ($result->getKind() === CassandraResult::ROWS) {
+                $count = $result->getRowCount();
+            } else {
+                $count = 0;
+            }
+
+            $change = $count > 0;
+
+            $this->recordsHaveBeenModified($change);
+
+            return $change;
+        });
+
+        if (!is_bool($result)) {
+            throw new CassandraException('Result is not boolean');
+        }
+
+        return $result;
+    }
+
+    /**
+     * Create a new native Cassandra connection.
+     *
+     * @param array{
+     *   host: string,
+     *   port: string|int,
+     *   username: string,
+     *   password: string,
+     *   keyspace?: string,
+     *   timeout?: int,
+     *   connect_timeout?: float,
+     *   request_timeout?: float,
+     *   page_size?: int
+     * } $config
+     * 
+     * @return CassandraConnection
+     */
+    protected function createNativeConnection(array $config): CassandraConnection {
+        $nodes = $this->getNodes($config);
+        $nativeConnection = new CassandraConnection($nodes, $config['keyspace'] ?? '');
+        $nativeConnection->connect();
+
+        return $nativeConnection;
+    }
+
+    /**
+     * Escape a binary value for safe SQL embedding.
+     *
+     * @param  string  $value
+     * @return string
+     */
+    protected function escapeBinary($value) {
+        $hex = bin2hex($value);
+
+        return '0x' . $hex;
+    }
+
+    /**
+     * Escape a boolean value for safe SQL embedding.
+     *
+     * @param  bool  $value
+     * @return string
+     */
+    protected function escapeBool($value) {
+
+        return $value ? 'true' : 'false';
+    }
+
+    /**
+     * Escape a string value for safe SQL embedding.
+     *
+     * @param  string  $value
+     * @return string
+     */
+    protected function escapeString($value) {
+
+        return "'" . str_replace("'", "''", $value) . "'";
+    }
+
+    /**
+     * Get the CDO connection to use for a select query.
+     *
+     * @param  bool  $useReadCdo
+     * @return \Cassandra\Connection
+     */
+    protected function getCdoForSelect($useReadCdo = true): CassandraConnection {
+        return $useReadCdo ? $this->getReadCdo() : $this->getCdo();
     }
 
     /**
@@ -264,13 +562,83 @@ class Connection extends BaseConnection {
      * @inheritdoc
      */
     protected function getDefaultQueryGrammar() {
-        return new Query\Grammar();
+        ($grammar = new Query\Grammar)->setConnection($this);
+
+        return $grammar;
     }
 
     /**
      * @inheritdoc
      */
     protected function getDefaultSchemaGrammar() {
-        return new Schema\Grammar();
+        ($grammar = new Schema\Grammar)->setConnection($this);
+
+        $grammar->setTablePrefix($this->tablePrefix);
+
+        return $grammar;
+    }
+
+    /**
+     * Get nodes config
+     *
+     * @param array{
+     *   host: string,
+     *   port: string|int,
+     *   username: string,
+     *   password: string,
+     *   keyspace?: string,
+     *   timeout?: int,
+     *   connect_timeout?: float,
+     *   request_timeout?: float,
+     *   page_size?: int
+     * } $config
+     * 
+     * @return array<array{
+     *   host: string,
+     *   port: int,
+     *   username: string,
+     *   password: string,
+     *   timeout: int,
+     *   connect_timeout: float,
+     *   request_timeout: float,
+     *   page_size: int
+     * }>
+     */
+    protected function getNodes(array $config): array {
+        $nodes = [];
+
+        $hosts = explode(',', $config['host']);
+        $config['port'] = $config['port'] ?? [];
+
+        if (count($hosts) < 1) {
+            throw new CassandraException('DB hostname is not found, please check your DB hostname');
+        }
+
+        if ($config['port']) {
+            if (is_string($config['port'])) {
+                $ports = explode(',', $config['port']);
+            } else {
+                $ports = [array_fill(0, count($hosts), $config['port'])];
+            }
+        } else {
+            $ports = array_fill(0, count($hosts), 9042);
+        }
+
+        foreach ($hosts as $index => $host) {
+            $node = [
+                'host' => $host,
+                'port' => (int) $ports[$index],
+                'username' => $config['username'],
+                'password' => $config['password'],
+                'timeout' => $config['timeout'] ?? self::DEFAULT_TIMEOUT,
+                'connect_timeout' => $config['connect_timeout'] ?? self::DEFAULT_CONNECT_TIMEOUT,
+                'request_timeout' => $config['request_timeout'] ?? self::DEFAULT_REQUEST_TIMEOUT,
+                'page_size' => $config['page_size'] ?? self::DEFAULT_PAGE_SIZE,
+            ];
+
+            $nodes[] = $node;
+        }
+
+        return $nodes;
     }
 }
