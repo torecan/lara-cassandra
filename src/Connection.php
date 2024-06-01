@@ -66,13 +66,13 @@ class Connection extends BaseConnection {
             $connection->cdo = $this->createNativeConnection($config);
         });
 
-        $database = $config['keyspace'] ?? '';
+        $keyspace = $config['keyspace'] ?? '';
         $tablePrefix = $config['prefix'] ?? '';
 
         // First we will setup the default properties. We keep track of the DB
         // name we are connected to since it is needed when some reflective
         // type commands are run such as checking whether a table exists.
-        $this->database = $database;
+        $this->database = $keyspace;
 
         $this->tablePrefix = $tablePrefix;
 
@@ -104,12 +104,12 @@ class Connection extends BaseConnection {
             // For update or delete statements, we want to get the number of rows affected
             // by the statement and return that back to the developer. We'll first need
             // to execute the statement and then we'll use PDO to fetch the affected.
-            $statement = $cdo->prepare($query);
+            $prepareResult = $cdo->prepare($query);
 
             $preparedBindings = $this->prepareBindings($bindings);
 
             $cdo->executeSync(
-                $statement['id'],
+                $prepareResult,
                 $preparedBindings,
                 $this->getConsistency()->value
             );
@@ -152,8 +152,8 @@ class Connection extends BaseConnection {
             // First we will create a statement for the query. Then, we will set the fetch
             // mode and prepare the bindings for the query. Once that's done we will be
             // ready to execute the query against the database and return the cursor.
-            $statement = $cdo->prepare($query);
-            $this->event(new StatementPrepared($this, $statement));
+            $prepareResult = $cdo->prepare($query);
+            $this->event(new StatementPrepared($this, $prepareResult));
 
             $preparedBindings = $this->prepareBindings($bindings);
 
@@ -161,7 +161,7 @@ class Connection extends BaseConnection {
             // so we can return the cursor. The cursor will use a PHP generator to give
             // back one row at a time without using a bunch of memory to render them.
             $result = $cdo->executeSync(
-                $statement['id'],
+                $prepareResult,
                 $preparedBindings,
                 $this->getConsistency()->value,
                 [
@@ -220,6 +220,15 @@ class Connection extends BaseConnection {
 
     public function getConsistency(): Consistency {
         return $this->consistency;
+    }
+
+    /**
+     * Get the name of the connected keyspace.
+     *
+     * @return string
+     */
+    public function getKeyspaceName() {
+        return $this->database;
     }
 
     public function getPageSize(): int {
@@ -329,13 +338,13 @@ class Connection extends BaseConnection {
             // For select statements, we'll simply execute the query and return an array
             // of the database result set. Each element in the array will be a single
             // row from the database table, and will either be an array or objects.
-            $statement = $cdo->prepare($query);
-            $this->event(new StatementPrepared($this, $statement));
+            $prepareResult = $cdo->prepare($query);
+            $this->event(new StatementPrepared($this, $prepareResult));
 
             $preparedBindings = $this->prepareBindings($bindings);
 
             $result = $cdo->executeSync(
-                $statement['id'],
+                $prepareResult,
                 $preparedBindings,
                 $this->getConsistency()->value,
                 [
@@ -391,6 +400,18 @@ class Connection extends BaseConnection {
     }
 
     /**
+     * Set the name of the connected keyspace.
+     *
+     * @param  string  $keyspace
+     * @return $this
+     */
+    public function setKeyspaceName($keyspace) {
+        $this->database = $keyspace;
+
+        return $this;
+    }
+
+    /**
      * Set the CDO connection used for reading.
      *
      * @param  \Cassandra\Connection|\Closure|null  $cdo
@@ -417,14 +438,14 @@ class Connection extends BaseConnection {
 
             $cdo = $this->getCdo();
 
-            $statement = $cdo->prepare($query);
+            $prepareResult = $cdo->prepare($query);
 
             $preparedBindings = $this->prepareBindings($bindings);
 
             $this->recordsHaveBeenModified();
 
             $cdo->executeSync(
-                $statement['id'],
+                $prepareResult,
                 $preparedBindings,
                 $this->getConsistency()->value
             );

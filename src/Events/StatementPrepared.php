@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace LaraCassandra\Events;
 
+use Cassandra\Response\Result;
 use LaraCassandra\Connection;
 
 class StatementPrepared {
@@ -16,19 +17,16 @@ class StatementPrepared {
 
     /**
      * The CDO statement.
-     *
-     * @var array<mixed>
      */
-    public array $statement;
+    public Result $statement;
 
     /**
      * Create a new event instance.
      *
      * @param  \LaraCassandra\Connection $connection
-     * @param  array<mixed> $statement
      * @return void
      */
-    public function __construct(Connection $connection, array $statement) {
+    public function __construct(Connection $connection, Result $statement) {
         $this->statement = $statement;
         $this->connection = $connection;
     }

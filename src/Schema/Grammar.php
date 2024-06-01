@@ -18,7 +18,7 @@ class Grammar extends BaseGrammar {
      * @var array<string>
      */
     protected $modifiers = [
-        'PrimaryKey', 'Static',
+        'PrimaryKey', 'Static', 'Nullable',
     ];
 
     /**
@@ -359,6 +359,18 @@ class Grammar extends BaseGrammar {
             $this->wrapTable($blueprint),
             implode(', ', $tableStructure)
         );
+    }
+
+    /**
+     * Get the SQL for a nullable column modifier.
+     *
+     * @param  \Illuminate\Database\Schema\Blueprint  $blueprint
+     * @param  \Illuminate\Support\Fluent<string,mixed>  $column
+     * @return string|null
+     */
+    protected function modifyNullable(BaseBlueprint $blueprint, Fluent $column) {
+
+        return null;
     }
 
     /**
