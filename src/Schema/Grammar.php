@@ -705,12 +705,12 @@ class Grammar extends BaseGrammar {
     /**
      * Wrap a single string in keyword identifiers.
      *
-     * @param string $value
+     * @param  string  $value
      * @return string
      */
     protected function wrapValue($value) {
         if ($value !== '*') {
-            return str_replace('"', '""', $value);
+            return '"' . str_replace('"', '""', $value) . '"';
         }
 
         return $value;
