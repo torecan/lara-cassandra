@@ -61,9 +61,8 @@ class Connection extends BaseConnection {
         $this->readCdo = null;
 
         $this->setReconnector(function ($connection) use ($config) {
-
             $connection->disconnect();
-            $connection->cdo = $this->createNativeConnection($config);
+            $connection->cdo = $connection->createNativeConnection($config);
         });
 
         $keyspace = $config['keyspace'] ?? '';
@@ -192,13 +191,9 @@ class Connection extends BaseConnection {
             $this->cdo->disconnect();
         }
 
-        $this->cdo = null;
-
         if ($this->readCdo instanceof CassandraConnection) {
             $this->readCdo->disconnect();
         }
-
-        $this->readCdo = null;
 
         $this->setCdo(null)->setReadCdo(null);
     }
