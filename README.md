@@ -1,4 +1,4 @@
-## **LaraCassandra**
+# **LaraCassandra**
 
 A Laraval database driver for Cassandra.
 
