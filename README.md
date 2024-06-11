@@ -99,7 +99,7 @@ Laravel migration features are supported (when LaraCassandra\CassandraMigrationS
   ```
     DB::table('example')->setConsistency(Consistency::ALL)->where('id', 1)->get();
   ```
-- Connection and Builder classes support allow filtering via `allowFiltering()`, for example:
+- Builder classes support allow filtering via `allowFiltering()`, for example:
   ```
     DB::table('example')->where('time', '>=', 1)->allowFiltering()->get();
   ```
