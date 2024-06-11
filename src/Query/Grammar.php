@@ -16,6 +16,7 @@ class Grammar extends BaseGrammar {
      * @var string[]
      */
     protected $selectComponents = [
+        'aggregate',
         'columns',
         'from',
         'wheres',
