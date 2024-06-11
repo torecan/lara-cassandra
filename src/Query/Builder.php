@@ -35,6 +35,8 @@ class Builder extends BaseBuilder {
 
     protected ?Consistency $consistency = null;
 
+    protected bool $ignoreWarnings = false;
+
     /**
      * Add a binding to the query.
      *
@@ -79,8 +81,15 @@ class Builder extends BaseBuilder {
 
     public function delete($id = null) {
         $this->applyConsistency();
+        $this->applyIgnoreWarnings();
 
         return parent::delete($id);
+    }
+
+    public function ignoreWarnings(bool $ignoreWarnings = true): self {
+        $this->ignoreWarnings = $ignoreWarnings;
+
+        return $this;
     }
 
     /**
@@ -88,6 +97,7 @@ class Builder extends BaseBuilder {
     */
     public function insert(array $values) {
         $this->applyConsistency();
+        $this->applyIgnoreWarnings();
 
         return parent::insert($values);
     }
@@ -158,6 +168,7 @@ class Builder extends BaseBuilder {
     */
     public function update(array $values) {
         $this->applyConsistency();
+        $this->applyIgnoreWarnings();
 
         return parent::update($values);
     }
@@ -197,11 +208,25 @@ class Builder extends BaseBuilder {
         }
     }
 
+    protected function applyIgnoreWarnings(): void {
+
+        if (!$this->connection instanceof Connection) {
+            throw new RuntimeException('Invalid connection selected.');
+        }
+
+        if ($this->ignoreWarnings) {
+            $this->connection->ignoreWarnings();
+        } else {
+            $this->connection->logWarnings();
+        }
+    }
+
     /**
     * @return array<mixed>
     */
     protected function runSelect() {
         $this->applyConsistency();
+        $this->applyIgnoreWarnings();
 
         return parent::runSelect();
     }

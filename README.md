@@ -102,6 +102,11 @@ Additionaly these feautres are supported by this driver:
     DB::table('example')->where('time', '>=', 1)->allowFiltering()->get();
   ```
 
+- By default warnings returned by Cassandra are logged - this can be turned off if needed:
+  ```
+    DB::table('example')->ignoreWarnings()->max('id');
+  ```
+
 ## **Auth**
 
 ! TODO !

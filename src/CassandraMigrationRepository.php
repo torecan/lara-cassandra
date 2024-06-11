@@ -158,7 +158,13 @@ class CassandraMigrationRepository implements MigrationRepositoryInterface {
      * @return int
      */
     public function getLastBatchNumber() {
-        $lastBatchNumber = $this->table()->max('batch') ?? 0;
+
+        $builder = $this->table();
+        if (!$builder instanceof QueryBuilder) {
+            throw new RuntimeException('Query builder must be an instance of LaraCassandra\Query\Builder');
+        }
+
+        $lastBatchNumber = $builder->ignoreWarnings()->max('batch') ?? 0;
 
         if (!is_numeric($lastBatchNumber)) {
             throw new RuntimeException('Batch number must be numeric');

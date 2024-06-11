@@ -17,6 +17,8 @@ use LaraCassandra\Consistency;
 class Builder extends BaseBuilder {
     protected ?Consistency $consistency = null;
 
+    protected bool $ignoreWarnings = false;
+
     /**
      * @inheritdoc
      */
@@ -183,6 +185,12 @@ class Builder extends BaseBuilder {
         );
     }
 
+    public function ignoreWarnings(bool $ignoreWarnings = true): self {
+        $this->ignoreWarnings = $ignoreWarnings;
+
+        return $this;
+    }
+
     /**
      * Rename a table on the schema.
      *
@@ -199,6 +207,7 @@ class Builder extends BaseBuilder {
 
         return $this;
     }
+
     protected function applyConsistency(): void {
 
         if (!$this->connection instanceof Connection) {
@@ -212,8 +221,22 @@ class Builder extends BaseBuilder {
         }
     }
 
+    protected function applyIgnoreWarnings(): void {
+
+        if (!$this->connection instanceof Connection) {
+            throw new RuntimeException('Invalid connection selected.');
+        }
+
+        if ($this->ignoreWarnings) {
+            $this->connection->ignoreWarnings();
+        } else {
+            $this->connection->logWarnings();
+        }
+    }
+
     protected function build(BaseBlueprint $blueprint) {
         $this->applyConsistency();
+        $this->applyIgnoreWarnings();
         parent::build($blueprint);
     }
 
