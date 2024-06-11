@@ -141,7 +141,7 @@ class Connection extends BaseConnection {
 
         $useReadCdo = $useReadPdo;
 
-        $resultIterator = $this->run($query, $bindings, function ($query, $bindings) use ($useReadCdo) {
+        $results = $this->run($query, $bindings, function ($query, $bindings) use ($useReadCdo) {
             if ($this->pretending()) {
                 return [];
             }
@@ -159,24 +159,45 @@ class Connection extends BaseConnection {
             // Next, we'll execute the query against the database and return the statement
             // so we can return the cursor. The cursor will use a PHP generator to give
             // back one row at a time without using a bunch of memory to render them.
-            $result = $cdo->executeSync(
-                $prepareResult,
-                $preparedBindings,
-                $this->getConsistency()->value,
-                [
+            $results = [];
+            $pagingState = null;
+            do {
+                $options = [
                     'page_size' => $this->getPageSize(),
-                ]
-            );
+                ];
+
+                if ($pagingState) {
+                    $options['paging_state'] = $pagingState;
+                }
+
+                $result = $cdo->executeSync(
+                    $prepareResult,
+                    $preparedBindings,
+                    $this->getConsistency()->value,
+                    $options,
+                );
+
+                $pagingState = $result->getMetadata()['paging_state'] ?? null;
+
+                $results[] = $result->getIterator();
+
+            } while ($pagingState);
 
             return $result->getIterator();
         });
 
-        if (!is_iterable($resultIterator)) {
-            throw new CassandraException('Result is not iterable');
+        if (!is_iterable($results)) {
+            throw new CassandraException('Results are not iterable');
         }
 
-        foreach ($resultIterator as $record) {
-            yield $record;
+        foreach ($results as $result) {
+            if (!is_iterable($result)) {
+                throw new CassandraException('Result is not iterable');
+            }
+
+            foreach ($result as $record) {
+                yield $record;
+            }
         }
     }
 
@@ -301,6 +322,15 @@ class Connection extends BaseConnection {
     }
 
     /**
+     * @inheritdoc
+     */
+    public function query() {
+        return new Query\Builder(
+            $this, $this->getQueryGrammar(), $this->getPostProcessor()
+        );
+    }
+
+    /**
      * Reconnect to the database if a CDO connection is missing.
      *
      * @return void
@@ -338,16 +368,31 @@ class Connection extends BaseConnection {
 
             $preparedBindings = $this->prepareBindings($bindings);
 
-            $result = $cdo->executeSync(
-                $prepareResult,
-                $preparedBindings,
-                $this->getConsistency()->value,
-                [
+            $result = [];
+            $pagingState = null;
+            do {
+                $options = [
                     'page_size' => $this->getPageSize(),
-                ]
-            );
+                ];
 
-            return $result->fetchAll();
+                if ($pagingState) {
+                    $options['paging_state'] = $pagingState;
+                }
+
+                $currentResult = $cdo->executeSync(
+                    $prepareResult,
+                    $preparedBindings,
+                    $this->getConsistency()->value,
+                    $options,
+                );
+
+                $pagingState = $currentResult->getMetadata()['paging_state'] ?? null;
+
+                $result = array_merge($result, $currentResult->fetchAll());
+
+            } while ($pagingState);
+
+            return $result;
         });
 
         if (!is_array($result)) {
@@ -473,9 +518,6 @@ class Connection extends BaseConnection {
                 $query,
                 [],
                 $this->getConsistency()->value,
-                [
-                    'page_size' => $this->getPageSize(),
-                ]
             );
 
             if ($result->getKind() === CassandraResult::ROWS) {
