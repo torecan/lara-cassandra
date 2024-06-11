@@ -42,29 +42,27 @@ And add a new cassandra connection:
         'request_timeout' => 12.0,
     ],
 
-#### .env File example
-
-  'driver' => 'cassandra'
-  
+### .env Examples
+```
   DB_CONNECTION=cassandra
-
   DB_HOST=127.0.0.1 
-  
   DB_PORT=8082
-
-  ### or
+```
+or
+```
+  DB_CONNECTION=cassandra
   DB_HOST=172.198.1.1,172.198.1.2,172.198.1.3
   DB_PORT=8082,8082,7748
 
   DB_DATABASE=db_name
   
   DB_USERNAME=torecan
-  
   DB_PASSWORD=***
   
   DB_PAGE_SIZE=500
+```
 
-#### Supported Consistency Settings
+### Supported Consistency Settings
 
   - LaraCassandra\Consistency::ALL
   - LaraCassandra\Consistency::ANY
@@ -86,14 +84,14 @@ Laravel migration features are supported (when LaraCassandra\CassandraMigrationS
 
   > php artisan make:migration createNewTable
 
-**Examples**
- see
-   - https://laravel.com/docs/11.x/database
-   - https://laravel.com/docs/11.x/eloquent
+## **Examples**
+See
+  - https://laravel.com/docs/11.x/database
+  - https://laravel.com/docs/11.x/eloquent
  
- Not all features are supported by Cassandra - those will throw exceptions when used.
+Not all features are supported by Cassandra - those will throw exceptions when used.
 
- Additionaly these feautres are supported by this driver:
+Additionaly these feautres are supported by this driver:
 
 - Connection and Builder classes support setting the query consistency via `setConsistency()`, for example:
   ```
@@ -104,7 +102,7 @@ Laravel migration features are supported (when LaraCassandra\CassandraMigrationS
     DB::table('example')->where('time', '>=', 1)->allowFiltering()->get();
   ```
 
-### **Auth**
+## **Auth**
 
 ! TODO !
 
