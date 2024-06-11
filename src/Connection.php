@@ -11,7 +11,7 @@ use Illuminate\Database\Connection as BaseConnection;
 use Cassandra\Connection as CassandraConnection;
 use Cassandra\Exception as CassandraException;
 use Cassandra\Response\Result as CassandraResult;
-
+use Illuminate\Support\Facades\Log;
 use LaraCassandra\Events\StatementPrepared;
 
 class Connection extends BaseConnection {
@@ -32,6 +32,8 @@ class Connection extends BaseConnection {
      * The active CDO connection used for reads.
      */
     protected CassandraConnection|Closure|null $readCdo;
+
+    protected ?Closure $warningHandler = null;
 
     /**
      * Create a new database connection instance.
@@ -104,14 +106,16 @@ class Connection extends BaseConnection {
             // by the statement and return that back to the developer. We'll first need
             // to execute the statement and then we'll use PDO to fetch the affected.
             $prepareResult = $cdo->prepare($query);
+            $this->logWarnings($prepareResult, $query);
 
             $preparedBindings = $this->prepareBindings($bindings);
 
-            $cdo->executeSync(
+            $result = $cdo->executeSync(
                 $prepareResult,
                 $preparedBindings,
                 $this->getConsistency()->value
             );
+            $this->logWarnings($result, $query);
 
             // we can't get the affected rows count from Cassandra,
             // so we assume that one row was affected
@@ -152,6 +156,8 @@ class Connection extends BaseConnection {
             // mode and prepare the bindings for the query. Once that's done we will be
             // ready to execute the query against the database and return the cursor.
             $prepareResult = $cdo->prepare($query);
+            $this->logWarnings($prepareResult, $query);
+
             $this->event(new StatementPrepared($this, $prepareResult));
 
             $preparedBindings = $this->prepareBindings($bindings);
@@ -176,6 +182,7 @@ class Connection extends BaseConnection {
                     $this->getConsistency()->value,
                     $options,
                 );
+                $this->logWarnings($result, $query);
 
                 $pagingState = $result->getMetadata()['paging_state'] ?? null;
 
@@ -364,6 +371,8 @@ class Connection extends BaseConnection {
             // of the database result set. Each element in the array will be a single
             // row from the database table, and will either be an array or objects.
             $prepareResult = $cdo->prepare($query);
+            $this->logWarnings($prepareResult, $query);
+
             $this->event(new StatementPrepared($this, $prepareResult));
 
             $preparedBindings = $this->prepareBindings($bindings);
@@ -385,6 +394,7 @@ class Connection extends BaseConnection {
                     $this->getConsistency()->value,
                     $options,
                 );
+                $this->logWarnings($currentResult, $query);
 
                 $pagingState = $currentResult->getMetadata()['paging_state'] ?? null;
 
@@ -463,6 +473,10 @@ class Connection extends BaseConnection {
         return $this;
     }
 
+    public function setWarningHandler(Closure $handler): void {
+        $this->warningHandler = $handler;
+    }
+
     /**
      * Execute an SQL statement and return the boolean result.
      *
@@ -479,16 +493,18 @@ class Connection extends BaseConnection {
             $cdo = $this->getCdo();
 
             $prepareResult = $cdo->prepare($query);
+            $this->logWarnings($prepareResult, $query);
 
             $preparedBindings = $this->prepareBindings($bindings);
 
             $this->recordsHaveBeenModified();
 
-            $cdo->executeSync(
+            $result = $cdo->executeSync(
                 $prepareResult,
                 $preparedBindings,
                 $this->getConsistency()->value
             );
+            $this->logWarnings($result, $query);
 
             return true;
         });
@@ -519,6 +535,7 @@ class Connection extends BaseConnection {
                 [],
                 $this->getConsistency()->value,
             );
+            $this->logWarnings($result, $query);
 
             if ($result->getKind() === CassandraResult::ROWS) {
                 $count = $result->getRowCount();
@@ -698,5 +715,21 @@ class Connection extends BaseConnection {
         }
 
         return $nodes;
+    }
+
+    protected function logWarnings(CassandraResult $result, string $query): void {
+        $warnings = $result->getWarnings();
+        if ($warnings) {
+            foreach ($warnings as $warning) {
+
+                $warningMessage = 'Warning - ' . $warning . ': ' . $query;
+
+                if ($this->warningHandler) {
+                    call_user_func($this->warningHandler, $warningMessage);
+                } else {
+                    Log::warning($warningMessage);
+                }
+            }
+        }
     }
 }
