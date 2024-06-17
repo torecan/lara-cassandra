@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace LaraCassandra\Query;
 
+use DateTime;
 use Illuminate\Database\Query\Grammars\Grammar as BaseGrammar;
 use Illuminate\Database\Query\Builder as BaseBuilder;
 use Illuminate\Support\Collection;
@@ -258,6 +259,15 @@ class Grammar extends BaseGrammar {
         )->implode(', ');
 
         return $updateCollectionCql;
+    }
+
+    /**
+     * Get the format for database stored dates.
+     *
+     * @return string
+     */
+    public function getDateFormat() {
+        return 'Y-m-d\\TH:i:sO';
     }
 
     /**
