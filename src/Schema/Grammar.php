@@ -196,9 +196,9 @@ class Grammar extends BaseGrammar {
             throw new RuntimeException('Index must be a string.');
         }
 
-        $index = $this->wrap($indexInfo);
+        $index = $this->wrap($blueprint->getTable() . '_' . $indexInfo . '_index');
 
-        return "drop index {$this->wrapTable($blueprint)}.{$index}";
+        return "drop index {$index}";
     }
 
     /**
