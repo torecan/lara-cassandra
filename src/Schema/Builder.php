@@ -68,6 +68,23 @@ class Builder extends BaseBuilder {
     }
 
     /**
+     * Drop all tables from the database.
+     *
+     * @return void
+     */
+    public function dropAllTables() {
+        $tables = array_column($this->getTables(), 'name');
+
+        if (!$tables) {
+            return;
+        }
+
+        foreach ($tables as $table) {
+            $this->connection->statement('drop table if exists ' . $this->grammar->wrapTable($table));
+        }
+    }
+
+    /**
      * Drop a keyspace from the schema if the keyspace exists.
      *
      * @param  string  $name
