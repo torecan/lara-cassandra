@@ -10,8 +10,13 @@ use Illuminate\Database\Connection as BaseConnection;
 
 use Cassandra\Connection as CassandraConnection;
 use Cassandra\Exception as CassandraException;
+use Cassandra\Request\Batch;
 use Cassandra\Response\Result as CassandraResult;
+use Exception;
+use Illuminate\Database\QueryException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use LaraCassandra\Events\StatementPrepared;
 
 class Connection extends BaseConnection {
@@ -130,6 +135,59 @@ class Connection extends BaseConnection {
 
         if (!is_int($result)) {
             throw new CassandraException('Result is not integer');
+        }
+
+        return $result;
+    }
+
+    /**
+     * Execute an SQL statement and return the boolean result.
+     *
+     * @param  string[]  $queries
+     * @param  array<array<mixed>>  $bindings
+     * @return bool
+     */
+    public function batchStatements($queries, $bindings = []) {
+
+        $queryCount = count($queries);
+        if ($queryCount !== count($bindings)) {
+            throw new CassandraException('Queries and bindings count mismatch');
+        }
+
+        $result = $this->runBatch($queries, $bindings, function ($queries, $bindings) {
+            if ($this->pretending()) {
+                return true;
+            }
+
+            $queryCount = count($queries);
+
+            $cdo = $this->getCdo();
+
+            $batchRequest = new Batch(Batch::TYPE_LOGGED, $this->getConsistency()->value);
+
+            for ($i = 0; $i < $queryCount; $i++) {
+
+                $query = $queries[$i];
+                $queryBindings = $bindings[$i];
+
+                $prepareResult = $cdo->prepare($query);
+                $this->logResultWarnings($prepareResult, $query);
+
+                $preparedBindings = $this->prepareBindings($queryBindings);
+
+                $batchRequest->appendPreparedStatement($prepareResult, $preparedBindings);
+            }
+
+            $this->recordsHaveBeenModified();
+
+            $result = $cdo->batchSync($batchRequest);
+            $this->logResultWarnings($result, 'batch: ' . implode(';', $queries));
+
+            return true;
+        });
+
+        if (!is_bool($result)) {
+            throw new CassandraException('Result is not boolean');
         }
 
         return $result;
@@ -568,6 +626,30 @@ class Connection extends BaseConnection {
     }
 
     /**
+     * Handle a query exception that occurred during query execution.
+     *
+     * @param  \Illuminate\Database\QueryException  $e
+     * @param  string[]  $queries
+     * @param  array<array<mixed>>  $bindings
+     * @param  \Closure  $callback
+     * @return mixed
+     *
+     * @throws \Illuminate\Database\QueryException
+     */
+    protected function batchTryAgainIfCausedByLostConnection(QueryException $e, $queries, $bindings, Closure $callback) {
+
+        $previous = $e->getPrevious();
+
+        if ($previous && $this->causedByLostConnection($previous)) {
+            $this->reconnect();
+
+            return $this->runBatchQueryCallback($queries, $bindings, $callback);
+        }
+
+        throw $e;
+    }
+
+    /**
      * Create a new native Cassandra connection.
      *
      * @param array{
@@ -727,6 +809,27 @@ class Connection extends BaseConnection {
         return $nodes;
     }
 
+    /**
+     * Handle a query exception.
+     *
+     * @param  \Illuminate\Database\QueryException  $e
+     * @param  string[]  $queries
+     * @param  array<array<mixed>>  $bindings
+     * @param  \Closure  $callback
+     * @return mixed
+     *
+     * @throws \Illuminate\Database\QueryException
+     */
+    protected function handleBatchQueryException(QueryException $e, $queries, $bindings, Closure $callback) {
+        if ($this->transactions >= 1) {
+            throw $e;
+        }
+
+        return $this->batchTryAgainIfCausedByLostConnection(
+            $e, $queries, $bindings, $callback
+        );
+    }
+
     protected function logResultWarnings(CassandraResult $result, string $query): void {
 
         if (!$this->logWarnings) {
@@ -745,6 +848,131 @@ class Connection extends BaseConnection {
                     Log::warning($warningMessage);
                 }
             }
+        }
+    }
+
+    /**
+     * Run a batch SQL statement and log its execution context.
+     *
+     * @param  string[]  $queries
+     * @param  array<array<mixed>>  $bindings
+     * @param  \Closure  $callback
+     * @return mixed
+     *
+     * @throws \Illuminate\Database\QueryException
+     */
+    protected function runBatch($queries, $bindings, Closure $callback) {
+
+        $queryCount = count($queries);
+
+        if ($queryCount !== count($bindings)) {
+            throw new CassandraException('Queries and bindings count mismatch');
+        }
+
+        for ($i = 0; $i < $queryCount; $i++) {
+
+            $query = $queries[$i];
+            $queryBindings = $bindings[$i];
+
+            if (!is_string($query)) {
+                throw new CassandraException('Query is not a string');
+            }
+
+            foreach ($this->beforeExecutingCallbacks as $beforeExecutingCallback) {
+                $beforeExecutingCallback($query, $queryBindings, $this);
+            }
+        }
+
+        $this->reconnectIfMissingConnection();
+
+        $start = (int) microtime(true);
+
+        // Here we will run this query. If an exception occurs we'll determine if it was
+        // caused by a connection that has been lost. If that is the cause, we'll try
+        // to re-establish connection and re-run the query with a fresh connection.
+        try {
+            $result = $this->runBatchQueryCallback($queries, $bindings, $callback);
+        } catch (QueryException $e) {
+            $result = $this->handleBatchQueryException(
+                $e, $queries, $bindings, $callback
+            );
+        }
+
+        // Once we have run the query we will calculate the time that it took to run and
+        // then log the query, bindings, and execution time so we will report them on
+        // the event that the developer needs them. We'll log time in milliseconds.
+
+        for ($i = 0; $i < $queryCount; $i++) {
+
+            $query = $queries[$i];
+            $queryBindings = $bindings[$i];
+
+            $this->logQuery(
+                $query, $queryBindings, $this->getElapsedTime($start)
+            );
+        }
+
+        return $result;
+    }
+
+    /**
+     * Run a batch SQL statement.
+     *
+     * @param  string[]  $queries
+     * @param  array<array<mixed>>  $bindings
+     * @param  \Closure  $callback
+     * @return mixed
+     *
+     * @throws \Illuminate\Database\QueryException
+     */
+    protected function runBatchQueryCallback($queries, $bindings, Closure $callback) {
+        // To execute the statement, we'll simply call the callback, which will actually
+        // run the SQL against the PDO connection. Then we can calculate the time it
+        // took to execute and log the query SQL, bindings and time in our memory.
+        try {
+            return $callback($queries, $bindings);
+        }
+
+        // If an exception occurs when attempting to run a query, we'll format the error
+        // message to include the bindings with SQL, which will make this exception a
+        // lot more helpful to the developer instead of just the database's errors.
+        catch (Exception $e) {
+
+            $queryCount = count($queries);
+
+            if ($queryCount !== count($bindings)) {
+                throw new CassandraException('Queries and bindings count mismatch');
+            }
+
+            $allQueries = 'batch: ';
+
+            for ($i = 0; $i < $queryCount; $i++) {
+
+                $query = $queries[$i];
+
+                /** @var ?string[] $queryBindings */
+                $queryBindings = $bindings[$i];
+
+                if (!is_string($query)) {
+                    throw new CassandraException('Query is not a string');
+                }
+
+                if (!is_array($queryBindings)) {
+                    throw new CassandraException('Query bindings are not an array');
+                }
+
+                $allQueries .= Str::replaceArray('?', $queryBindings, $query) . '; ';
+            }
+
+            if ($this->isUniqueConstraintError($e)) {
+                throw new UniqueConstraintViolationException(
+                    $this->getName() ?? '', $allQueries, [], $e
+                );
+            }
+
+            throw new QueryException(
+                $this->getName() ?? '', $allQueries, [], $e
+            );
         }
     }
 }
