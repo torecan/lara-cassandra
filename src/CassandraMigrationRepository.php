@@ -146,7 +146,7 @@ class CassandraMigrationRepository implements MigrationRepositoryInterface {
                 throw new RuntimeException('Migration must be an array');
             }
 
-            return strcmp($a['migration'], $b['migration']);
+            return strcmp($b['migration'], $a['migration']);
         });
 
         return $migrations;
