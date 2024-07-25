@@ -731,6 +731,9 @@ class Connection extends BaseConnection {
     protected function getDefaultQueryGrammar() {
         ($grammar = new Query\Grammar)->setConnection($this);
 
+        $grammar->setTablePrefix($this->tablePrefix);
+        $grammar->setKeyspaceName($this->getKeyspaceName());
+
         return $grammar;
     }
 
@@ -741,6 +744,7 @@ class Connection extends BaseConnection {
         ($grammar = new Schema\Grammar)->setConnection($this);
 
         $grammar->setTablePrefix($this->tablePrefix);
+        $grammar->setKeyspaceName($this->getKeyspaceName());
 
         return $grammar;
     }

@@ -11,6 +11,8 @@ use Illuminate\Support\Collection;
 use InvalidArgumentException;
 
 class Grammar extends BaseGrammar {
+    protected string $keyspaceName = '';
+
     /**
      * The components that make up a select clause.
      *
@@ -268,6 +270,31 @@ class Grammar extends BaseGrammar {
      */
     public function getDateFormat() {
         return 'Y-m-d\\TH:i:sO';
+    }
+
+    public function getKeyspaceName(): string {
+        return $this->keyspaceName;
+    }
+
+    public function setKeyspaceName(string $keyspaceName): void {
+        $this->keyspaceName = $keyspaceName;
+    }
+
+    /**
+     * Wrap a table in keyword identifiers.
+     *
+     * @param  \Illuminate\Contracts\Database\Query\Expression|string  $table
+     * @return string
+     */
+    public function wrapTable($table) {
+        $table = parent::wrapTable($table);
+
+        $keyspaceName = $this->getKeyspaceName();
+        if ($keyspaceName) {
+            $table = $this->wrapValue($keyspaceName) . '.' . $table;
+        }
+
+        return $table;
     }
 
     /**

@@ -12,6 +12,8 @@ use Illuminate\Database\Connection as BaseConnection;
 use Illuminate\Database\Schema\Blueprint as BaseBlueprint;
 
 class Grammar extends BaseGrammar {
+    protected string $keyspaceName = '';
+
     /**
      * The possible column modifiers.
      *
@@ -326,6 +328,31 @@ class Grammar extends BaseGrammar {
             . 'from system_schema.views where keyspace_name = %s',
             $this->quoteString($keyspace)
         );
+    }
+
+    public function getKeyspaceName(): string {
+        return $this->keyspaceName;
+    }
+
+    public function setKeyspaceName(string $keyspaceName): void {
+        $this->keyspaceName = $keyspaceName;
+    }
+
+    /**
+     * Wrap a table in keyword identifiers.
+     *
+     * @param  mixed  $table
+     * @return string
+     */
+    public function wrapTable($table) {
+        $table = parent::wrapTable($table);
+
+        $keyspaceName = $this->getKeyspaceName();
+        if ($keyspaceName) {
+            $table = $this->wrapValue($keyspaceName) . '.' . $table;
+        }
+
+        return $table;
     }
 
     /**
