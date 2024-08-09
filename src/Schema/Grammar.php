@@ -367,15 +367,15 @@ class Grammar extends BaseGrammar {
         $tableStructure = $this->getColumns($blueprint);
 
         // partion key(s)
-        $partitionKeys = $this->getCommandsByName($blueprint, 'partition');
+        $partitionCommands = $this->getCommandsByName($blueprint, 'partition');
         $partitionKeyColumns = [];
-        foreach ($partitionKeys as $partitionKey) {
-            $columns = $partitionKey->value('columns');
+        foreach ($partitionCommands as $command) {
+            $columns = $command->value('columns');
             if (!is_array($columns)) {
                 throw new RuntimeException('Partition key columns must be an array.');
             }
 
-            $partitionKey->offsetSet('shouldBeSkipped', true);
+            $command->offsetSet('shouldBeSkipped', true);
 
             $partitionKeyColumns = array_merge($partitionKeyColumns, $columns);
         }
@@ -385,29 +385,29 @@ class Grammar extends BaseGrammar {
             throw new RuntimeException('Partition key must be defined.');
         }
 
-        // clustering key(s)
-        $clusteringKeys = $this->getCommandsByName($blueprint, 'clustering');
-        $clusteringKeyColumns = [];
-        foreach ($clusteringKeys as $clusteringKey) {
-            $columns = $clusteringKey->value('columns');
+        // clustering columns(s)
+        $clusteringCommands = $this->getCommandsByName($blueprint, 'clustering');
+        $clusteringColumns = [];
+        foreach ($clusteringCommands as $command) {
+            $columns = $command->value('columns');
             if (!is_array($columns)) {
                 throw new RuntimeException('Partition key columns must be an array.');
             }
 
-            $clusteringKey->offsetSet('shouldBeSkipped', true);
+            $command->offsetSet('shouldBeSkipped', true);
 
             foreach ($columns as $column) {
-                $clusteringKeyColumns[$column] =  $clusteringKey->algorithm;
+                $clusteringColumns[$column] =  $command->algorithm;
             }
         }
-        $clusteringKeyCql = $this->columnize(array_keys($clusteringKeyColumns));
+        $clusteringCql = $this->columnize(array_keys($clusteringColumns));
 
-        if ($clusteringKeyCql) {
-            $keyCql = '(' . $partitionKeyCql . '), ' . $clusteringKeyCql;
+        if ($clusteringCql) {
+            $keyCql = '(' . $partitionKeyCql . '), ' . $clusteringCql;
 
             $clusteringOrders = [];
-            foreach ($clusteringKeyColumns as $name => $orderBy) {
-                $clusteringOrders[] = $name . ' ' . $orderBy;
+            foreach ($clusteringColumns as $name => $orderBy) {
+                $clusteringOrders[] = $this->wrapValue($name) . ' ' . $orderBy;
             }
 
             $clusteringOrderCql = ' WITH CLUSTERING ORDER BY (' . implode(', ', $clusteringOrders) . ')';
