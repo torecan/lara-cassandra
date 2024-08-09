@@ -107,7 +107,7 @@ class Blueprint extends BaseBlueprint {
     }
 
     /**
-     * Specify the clustering key(s) for the table.
+     * Specify the clustering column(s) for the table.
      *
      * @param  string|array<mixed>  $columns
      * @param  string|null  $orderBy

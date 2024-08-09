@@ -93,7 +93,7 @@ Not all features are supported by Cassandra - those will throw exceptions when u
 
 Additionaly these feautres are supported by this driver:
 
-- Schemas with Partition and Clustering Keys:
+- Schemas with Partition Keys and Clustering Columns:
  ```
     $table->int('bucket')->partition();
     $table->int('id')->partition();
