@@ -366,25 +366,66 @@ class Grammar extends BaseGrammar {
     protected function compileCreateTable($blueprint, $command, $connection) {
         $tableStructure = $this->getColumns($blueprint);
 
-        if ($primaryKey = $this->getCommandByName($blueprint, 'primary')) {
-
-            $columns = $primaryKey->value('columns');
+        // partion key(s)
+        $partitionKeys = $this->getCommandsByName($blueprint, 'partition');
+        $partitionKeyColumns = [];
+        foreach ($partitionKeys as $partitionKey) {
+            $columns = $partitionKey->value('columns');
             if (!is_array($columns)) {
-                throw new RuntimeException('Primary key columns must be an array.');
+                throw new RuntimeException('Partition key columns must be an array.');
             }
 
-            $tableStructure[] = sprintf(
-                'primary key (%s)',
-                $this->columnize($columns)
-            );
+            $partitionKey->offsetSet('shouldBeSkipped', true);
 
-            $primaryKey->offsetSet('shouldBeSkipped', true);
+            $partitionKeyColumns = array_merge($partitionKeyColumns, $columns);
+        }
+        $partitionKeyCql = $this->columnize($partitionKeyColumns);
+
+        if (!$partitionKeyCql) {
+            throw new RuntimeException('Partition key must be defined.');
         }
 
-        return sprintf('%s table %s (%s)',
+        // clustering key(s)
+        $clusteringKeys = $this->getCommandsByName($blueprint, 'clustering');
+        $clusteringKeyColumns = [];
+        foreach ($clusteringKeys as $clusteringKey) {
+            $columns = $clusteringKey->value('columns');
+            if (!is_array($columns)) {
+                throw new RuntimeException('Partition key columns must be an array.');
+            }
+
+            $clusteringKey->offsetSet('shouldBeSkipped', true);
+
+            foreach ($columns as $column) {
+                $clusteringKeyColumns[$column] =  $clusteringKey->algorithm;
+            }
+        }
+        $clusteringKeyCql = $this->columnize(array_keys($clusteringKeyColumns));
+
+        if ($clusteringKeyCql) {
+            $keyCql = '(' . $partitionKeyCql . '), ' . $clusteringKeyCql;
+
+            $clusteringOrders = [];
+            foreach ($clusteringKeyColumns as $name => $orderBy) {
+                $clusteringOrders[] = $name . ' ' . $orderBy;
+            }
+
+            $clusteringOrderCql = ' WITH CLUSTERING ORDER BY (' . implode(', ', $clusteringOrders) . ')';
+        } else {
+            $keyCql = $partitionKeyCql;
+            $clusteringOrderCql = '';
+        }
+
+        $tableStructure[] = sprintf(
+            'primary key (%s)',
+            $keyCql
+        );
+
+        return sprintf('%s table %s (%s)%s',
             'create',
             $this->wrapTable($blueprint),
-            implode(', ', $tableStructure)
+            implode(', ', $tableStructure),
+            $clusteringOrderCql
         );
     }
 

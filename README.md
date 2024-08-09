@@ -93,6 +93,18 @@ Not all features are supported by Cassandra - those will throw exceptions when u
 
 Additionaly these feautres are supported by this driver:
 
+- Schemas with Partition and Clustering Keys:
+ ```
+    $table->int('bucket')->partition();
+    $table->int('id')->partition();
+    $table->int('userid')->partition();
+    $table->int('join_date')->clustering('DESC');
+    $table->int('update_date')->clustering('ASC');
+    $table->int('another_date')->clustering();
+
+    // Note: ->primary() is identical with partition()
+ ```
+
 - Connection and Builder classes support setting the query consistency via `setConsistency()`, for example:
   ```
     DB::table('example')->setConsistency(Consistency::ALL)->where('id', 1)->get();

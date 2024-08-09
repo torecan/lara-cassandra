@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace LaraCassandra\Schema;
 
+use Illuminate\Database\Connection;
 use Illuminate\Database\Schema\Blueprint as BaseBlueprint;
+use Illuminate\Database\Schema\Grammars\Grammar;
 use RuntimeException;
 
 class Blueprint extends BaseBlueprint {
@@ -102,6 +104,25 @@ class Blueprint extends BaseBlueprint {
      */
     public function charset($charset) {
         throw new RuntimeException('This database driver does not support setting the charset.');
+    }
+
+    /**
+     * Specify the clustering key(s) for the table.
+     *
+     * @param  string|array<mixed>  $columns
+     * @param  string|null  $orderBy
+     * @param  string|null  $name
+     * @return \Illuminate\Support\Fluent<string,mixed>
+     */
+    public function clustering($columns, $orderBy = null, $name = null) {
+
+        if (!$orderBy) {
+            $orderBy = 'ASC';
+        } else {
+            $orderBy = strtoupper($orderBy);
+        }
+
+        return $this->indexCommand('clustering', $columns, $name ?? '', $orderBy);
     }
 
     /**
@@ -503,6 +524,31 @@ class Blueprint extends BaseBlueprint {
     }
 
     /**
+     * Specify the parition key(s) for the table.
+     *
+     * @param  string|array<mixed>  $columns
+     * @param  string|null  $name
+     * @param  string|null  $algorithm
+     * @return \Illuminate\Support\Fluent<string,mixed>
+     */
+    public function partition($columns, $name = null, $algorithm = null) {
+
+        return $this->indexCommand('partition', $columns, $name ?? '', $algorithm);
+    }
+
+    /**
+     * Specify the primary key(s) for the table.
+     *
+     * @param  string|array<mixed>  $columns
+     * @param  string|null  $name
+     * @param  string|null  $algorithm
+     * @return \Illuminate\Support\Fluent<string,mixed>
+     */
+    public function primary($columns, $name = null, $algorithm = null) {
+        return $this->indexCommand('partition', $columns, $name ?? '', $algorithm);
+    }
+
+    /**
      * Rename the table to a given name.
      *
      * @param  string  $to
@@ -746,5 +792,55 @@ class Blueprint extends BaseBlueprint {
      */
     public function year($column) {
         return $this->addColumn('date', $column);
+    }
+
+    /**
+     * Add the index commands fluently specified on columns.
+     *
+     * @param  \Illuminate\Database\Connection  $connection
+     * @param  \Illuminate\Database\Schema\Grammars\Grammar  $grammar
+     * @return void
+     */
+    protected function addFluentIndexes(Connection $connection, Grammar $grammar) {
+        foreach ($this->columns as $column) {
+            foreach (['partition', 'clustering', 'primary', 'unique', 'index', 'fulltext', 'fullText', 'spatialIndex'] as $index) {
+
+                if (!isset($column->{$index})) {
+                    continue;
+                }
+
+                $columnName = isset($column->name) ? $column->name : null;
+
+                // If the index has been specified on the given column, but is simply equal
+                // to "true" (boolean), no name has been specified for this index so the
+                // index method can be called without a name and it will generate one.
+                if ($column->{$index} === true) {
+                    $this->{$index}($columnName);
+                    $column->{$index} = null;
+
+                    continue 2;
+                }
+
+                // If the index has been specified on the given column, but it equals false
+                // and the column is supposed to be changed, we will call the drop index
+                // method with an array of column to drop it by its conventional name.
+                elseif ($column->{$index} === false && !empty($column->change)) {
+                    $this->{'drop' . ucfirst($index)}([$columnName]);
+                    $column->{$index} = null;
+
+                    continue 2;
+                }
+
+                // If the index has been specified on the given column, and it has a string
+                // value, we'll go ahead and call the index method and pass the name for
+                // the index since the developer specified the explicit name for this.
+                elseif (isset($column->{$index})) {
+                    $this->{$index}($columnName, $column->{$index});
+                    $column->{$index} = null;
+
+                    continue 2;
+                }
+            }
+        }
     }
 }
